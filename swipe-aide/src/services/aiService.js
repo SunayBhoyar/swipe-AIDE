@@ -1,8 +1,7 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { addInvoice } from "../features/invoicesSlice";
-import { updateCustomer } from "../features/customersSlice";
-import { updateProduct } from "../features/productsSlice";
-import axios from "axios";
+import { addCustomer } from "../features/customersSlice";
+import { addProduct } from "../features/productsSlice";
 
 const apiKey = process.env.REACT_APP_GOOGLE_GENAI_API_KEY;
 const genAI = new GoogleGenerativeAI(apiKey);
@@ -130,7 +129,6 @@ const fileToGenerativePart = async (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
-      // Remove the data URL prefix (e.g., "data:image/jpeg;base64,")
       const base64Data = reader.result.split(',')[1];
       resolve({
         inlineData: {
@@ -144,20 +142,95 @@ const fileToGenerativePart = async (file) => {
   });
 };
 
+
+function validateAndConvertData(dataString) {
+    try {
+        const cleanString = dataString.trim().replace(/^```json|```$/g, '');
+        const parsedData = JSON.parse(cleanString);
+
+        function validateStructure(data) {
+            const expectedStructure = {
+                invoice: {
+                    serialNumber: "string|null",
+                    customerName: "string|null",
+                    productName: "string|null", 
+                    quantity: "number|null",
+                    tax: "number|null",
+                    totalAmount: "number|null",
+                    date: "string|null", 
+                },
+                product: {
+                    name: "string|null|array",
+                    quantity: "number|null|array",
+                    unitPrice: "number|null|array",
+                    tax: "number|null|array",
+                    priceWithTax: "number|null|array",
+                    discount: "number|null|array",
+                },
+                customer: {
+                    name: "string|null",
+                    phoneNumber: "number|null",
+                    totalPurchaseAmount: "number|null",
+                },
+            };
+
+            // Helper function to check data type
+            function checkType(value, expectedType) {
+                if (expectedType.includes("|")) {
+                    // For multiple allowed types
+                    const types = expectedType.split("|");
+                    return types.some((type) => checkType(value, type));
+                }
+                if (expectedType === "null") return value === null;
+                return typeof value === expectedType;
+            }
+
+            // Recursive validation
+            function validateObject(obj, structure) {
+                for (const key in structure) {
+                    if (!obj.hasOwnProperty(key)) {
+                        throw new Error(`Missing key: ${key}`);
+                    }
+                    const expectedType = structure[key];
+                    const value = obj[key];
+                    if (typeof expectedType === "object") {
+                        // Nested object validation
+                        validateObject(value, expectedType);
+                    } else if (!checkType(value, expectedType)) {
+                        throw new Error(`Invalid type for key: ${key}`);
+                    }
+                }
+            }
+
+            // Start validation
+            validateObject(data, expectedStructure);
+        }
+
+        // Validate parsed data
+        validateStructure(parsedData);
+
+        // If validation passes, return the JSON object
+        return parsedData;
+    } catch (error) {
+        console.error("Validation failed:", error.message);
+        return null; // Return null if validation fails
+    }
+}
+
+
 /**
- * Gets description of an image using Gemini Vision API
+ * Gets Invoice data of an image using Gemini Vision API
  * @param {File} imageFile - The image file object
- * @param {string} prompt - Custom prompt for the model (optional)
+ * @param {string} prompt - Custom prompt for the model 
  * @returns {Promise<string>} - The generated description
  */
 
-export const getImageDescription = async (imageFile, prompt = invoicePrompt) => {
+export const getDetailsFromInvoice = async (imageFile, prompt = invoicePrompt) => {
   try {
     if (!imageFile) {
       throw new Error("No image file provided");
     }
 
-    // Validate file type
     if (!imageFile.type.startsWith('image/')) {
       throw new Error("File must be an image");
     }
@@ -165,9 +238,9 @@ export const getImageDescription = async (imageFile, prompt = invoicePrompt) => 
     const imagePart = await fileToGenerativePart(imageFile);
     const result = await model.generateContent([prompt, imagePart]);
     const response = await result.response;
-    return response.text();
+    return response;
   } catch (error) {
-    console.error("Error getting image description:", error);
+    console.error("Error getting invoice data:", error);
     throw error;
   }
 };
@@ -180,75 +253,29 @@ export const getImageDescription = async (imageFile, prompt = invoicePrompt) => 
  */
 export const processFile = async (imageFile, dispatch) => {
   try {
-    // Get image description from Gemini
-    const description = await getImageDescription(imageFile);
-    console.log("AI-Generated Description:", description);
+    // Get image invoice detai from Gemini
+    const invoiceDetails = await getDetailsFromInvoice(imageFile);
 
-    // Prepare form data for backend
-    const formData = new FormData();
-    formData.append("file", imageFile);
-    formData.append("description", description);
-
-    // Send to backend
-    const response = await axios.post("/api/process-file", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-      },
-    });
-
-    if (response.data) {
-      const { invoices, products, customers } = response.data;
-
+    if (invoiceDetails.text()) {
+      const data = invoiceDetails.text();
+      const JSONdata = validateAndConvertData(data) ; 
+      console.log(JSONdata); 
       // Update Redux store
-      if (invoices) dispatch(addInvoice(invoices));
-      if (products) dispatch(updateProduct(products));
-      if (customers) dispatch(updateCustomer(customers));
+      if (JSONdata["invoice"]) dispatch(addInvoice(JSONdata["invoice"]));
+      if (JSONdata["product"]) dispatch(addProduct(JSONdata["product"]));
+      if (JSONdata["customer"]) dispatch(addCustomer(JSONdata["customer"]));
 
       return { 
         success: true, 
-        description,
-        data: response.data 
+        invoiceDetails,
+        data: invoiceDetails.data 
       };
     }
-
-    return { 
-      success: false, 
-      description 
-    };
-
   } catch (error) {
     console.error("Error processing image:", error);
-
-    // Fallback mock data
-    const mockData = {
-      invoices: {
-        serialNumber: "INV001",
-        customerName: "John Doe",
-        productName: "Product A",
-        quantity: 2,
-        tax: 10,
-        totalAmount: 110,
-        date: "2024-11-20",
-      },
-      products: [
-        { productName: "Product A", price: 50 },
-        { productName: "Product B", price: 75 },
-      ],
-      customers: [
-        { name: "John Doe", email: "john@example.com" },
-        { name: "Jane Smith", email: "jane@example.com" },
-      ],
-    };
-
-    // Update Redux store with mock data
-    dispatch(addInvoice(mockData.invoices));
-    dispatch(updateProduct(mockData.products));
-    dispatch(updateCustomer(mockData.customers));
-
     return { 
       success: false, 
       error: error.message,
-      mockData: true 
     };
   }
 };
