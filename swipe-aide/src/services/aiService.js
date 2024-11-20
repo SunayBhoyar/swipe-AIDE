@@ -1,3 +1,6 @@
+import * as pdfjsLib from 'pdfjs-dist';
+import html2canvas from 'html2canvas';
+import * as XLSX from 'xlsx';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { addInvoice } from "../features/invoicesSlice";
 import { addCustomer } from "../features/customersSlice";
@@ -217,6 +220,69 @@ function validateAndConvertData(dataString) {
     }
 }
 
+const convertMultiPagePdfToImages = async (pdfFile) => {
+    const pdf = await pdfjsLib.getDocument(URL.createObjectURL(pdfFile)).promise;
+    const images = [];
+  
+    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const viewport = page.getViewport({ scale: 1.5 });
+      
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+      
+      await page.render({ canvasContext: context, viewport: viewport }).promise;
+      
+      const imageBlob = await new Promise((resolve) => {
+        canvas.toBlob((blob) => {
+          resolve(blob);
+        });
+      });
+  
+      images.push(new File([imageBlob], `invoice_page_${pageNum}.png`, { type: 'image/png' }));
+    }
+    return images;
+  };
+
+const convertXlsxToImage = async (xlsxFile) => {
+    const workbook = XLSX.read(await xlsxFile.arrayBuffer());
+    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+    const htmlString = XLSX.utils.sheet_to_html(worksheet);
+    
+    const tempContainer = document.createElement('div');
+    tempContainer.innerHTML = htmlString;
+    document.body.appendChild(tempContainer);
+  
+    const canvas = await html2canvas(tempContainer);
+    // Convert the canvas to a Blob
+    canvas.toBlob((blob) => {
+        if (!blob) return; // Ensure the Blob exists
+
+        // Create a URL for the Blob
+        const blobURL = URL.createObjectURL(blob);
+
+        // Programmatically download the file
+        const downloadLink = document.createElement("a");
+        downloadLink.href = blobURL;
+        downloadLink.download = "snapshot.png"; // Set the file name
+        document.body.appendChild(downloadLink); // Append to the document
+        downloadLink.click(); // Trigger the download
+        document.body.removeChild(downloadLink); // Clean up the DOM
+
+        // Revoke the object URL after use
+        URL.revokeObjectURL(blobURL);
+    }, "image/png"); // Specify image type
+    
+    document.body.removeChild(tempContainer);
+  
+    return await new Promise((resolve) => {
+      canvas.toBlob((blob) => {
+        resolve(new File([blob], 'invoice.png', { type: 'image/png' }));
+      });
+    });
+  };
 
 /**
  * Gets Invoice data of an image using Gemini Vision API
@@ -251,32 +317,65 @@ export const getDetailsFromInvoice = async (imageFile, prompt = invoicePrompt) =
  * @param {Function} dispatch - Redux dispatch function
  * @returns {Promise<Object>} - Processing result
  */
-export const processFile = async (imageFile, dispatch) => {
+export const processFile = async (inputFile, dispatch) => {
   try {
-    // Get image invoice detai from Gemini
-    const invoiceDetails = await getDetailsFromInvoice(imageFile);
-
-    if (invoiceDetails.text()) {
-      const data = invoiceDetails.text();
-      const JSONdata = validateAndConvertData(data) ; 
-      console.log(JSONdata); 
-      // Update Redux store
-      if (JSONdata["invoice"]) dispatch(addInvoice(JSONdata["invoice"]));
-      if (JSONdata["product"]) dispatch(addProduct(JSONdata["product"]));
-      if (JSONdata["customer"]) dispatch(addCustomer(JSONdata["customer"]));
-
-      return { 
-        success: true, 
-        invoiceDetails,
-        data: invoiceDetails.data 
-      };
+    let imagesToProcess = [];
+    
+    switch (inputFile.type) {
+      case 'application/pdf':
+        imagesToProcess = await convertMultiPagePdfToImages(inputFile);
+        break;
+      case 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet':
+      case 'application/vnd.ms-excel':
+        imagesToProcess = [await convertXlsxToImage(inputFile)];
+        break;
+      case 'image/jpeg':
+      case 'image/png':
+      case 'image/gif':
+        imagesToProcess = [inputFile];
+        break;
+      default:
+        throw new Error('Unsupported file type');
     }
+
+    // Process each image and aggregate results
+    const processedResults = [];
+    for (const imageFile of imagesToProcess) {
+      // Get image invoice details from Gemini
+      const invoiceDetails = await getDetailsFromInvoice(imageFile);
+
+      if (invoiceDetails.text()) {
+        const data = invoiceDetails.text();
+        const JSONdata = validateAndConvertData(data);
+        
+        if (JSONdata) {
+          processedResults.push(JSONdata);
+          
+          // Update Redux store for each page's data
+          if (JSONdata["invoice"]) dispatch(addInvoice(JSONdata["invoice"]));
+          if (JSONdata["product"]) dispatch(addProduct(JSONdata["product"]));
+          if (JSONdata["customer"]) dispatch(addCustomer(JSONdata["customer"]));
+        }
+      }
+    }
+
+    // Combine results
+    const combinedData = {
+      invoices: processedResults.map(result => result.invoice).filter(Boolean),
+      products: processedResults.map(result => result.product).filter(Boolean),
+      customers: processedResults.map(result => result.customer).filter(Boolean)
+    };
+
+    return { 
+      success: true, 
+      data: combinedData 
+    };
+
   } catch (error) {
-    console.error("Error processing image:", error);
+    console.error("Error processing multi-page document:", error);
     return { 
       success: false, 
       error: error.message,
     };
   }
 };
-
