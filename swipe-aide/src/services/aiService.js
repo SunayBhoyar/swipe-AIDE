@@ -12,7 +12,6 @@ const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
 
 const invoicePrompt = `
 Analyze the provided invoice image and extract data according to these specifications:
-
 REQUIRED OUTPUT FORMAT:
 {
     "invoice": {
