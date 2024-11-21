@@ -39,7 +39,7 @@ const FileUpload = () => {
     <div>
       <h2>Upload and Process File</h2>
       <input type="file" onChange={handleFileChange} />
-      <button onClick={handleFileUpload}>Upload</button>
+      <button className="btn btn-primary" onClick={handleFileUpload}>Upload</button>
       <p>{uploadMessage}</p>
       {fileDescription && (
         <div>
