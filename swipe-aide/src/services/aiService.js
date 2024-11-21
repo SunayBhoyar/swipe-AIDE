@@ -11,115 +11,218 @@ const genAI = new GoogleGenerativeAI(apiKey);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
 
 const invoicePrompt = `
-Analyze the provided invoice image and extract data according to these specifications:
-REQUIRED OUTPUT FORMAT:
+Enhanced Invoice Extraction Specification
+OUTPUT FORMAT [MUST BE ONLY THIS JSON OUTPUT AND NO OTHER DATA/TEXT]
 {
-    "invoice": {
-        "serialNumber": string,    // Invoice ID/Number
-        "customerName": string,    // Customer/Business name
-        "productName": string,     // Product/Service name
-        "quantity": number,        // Total quantity
-        "tax": number,             // Tax amount
-        "totalAmount": number,     // Total including tax
-        "date": string             // Format: YYYY-MM-DD
-    },
-    "product": {
-        "name": string,            // Product name
-        "quantity": number,        // Product Quantity
-        "unitPrice": number,       // Product per unit price 
-        "tax": number,             // Product tax
-        "priceWithTax": number,    // Product amount with tax
-        "discount": number         // Product discount       
-    },
-    "customer": {
-        "name": string,             // Customer name 
-        "phoneNumber": number,      // Customer phone number  
-        "totalPurchaseAmount"       // Customer total amount purchased 
+    "invoices": [
+        {
+            "serialNumber": string,    // Invoice ID/Number
+            "customerName": string,    // Customer/Business name
+            "productNames": [string],  // List of Product/Service names
+            "totalQuantity": number,   // Total quantity across all products
+            "tax": number,             // Total tax amount
+            "totalAmount": number,     // Total including tax
+            "date": string             // Format: YYYY-MM-DD
+        }
+    ],
+    "products": [
+        {
+            "name": string,            // Product name
+            "quantity": number,        // Product Quantity
+            "unitPrice": number,       // Product per unit price 
+            "tax": number,             // Product tax
+            "priceWithTax": number,    // Product amount with tax
+            "discount": number,        // Product discount
+            "category": string,        // Product category (optional)
+            "sku": string              // Product SKU/ID (optional)
+        }
+    ],
+    "customers": [
+        {
+            "name": string,             // Customer name 
+            "phoneNumber": number,      // Customer phone number  
+            "totalPurchaseAmount": number, // Customer total amount purchased
+            "invoiceCount": number,     // Number of invoices for this customer
+            "purchaseHistory": [        // Optional purchase details
+                {
+                    "invoiceNumber": string,
+                    "date": string,
+                    "amount": number
+                }
+            ]
+        }
+    ],
+    "summary": {
+        "totalInvoices": number,        // Total number of invoices
+        "totalProducts": number,        // Total number of unique products
+        "totalCustomers": number,       // Total number of unique customers
+        "grandTotal": number,           // Total amount across all invoices
+        "averageInvoiceAmount": number  // Average invoice amount
     }
 }
+EXTRACTION RULES
+1. Multi-Entity Handling
 
-EXTRACTION RULES:
-   1. Data Types:
-        - Null Values: Use null for missing fields.
-        - Monetary Values: Convert all monetary values to numbers, removing currency symbols (e.g., "$10.50" → 10.50).
-        - Rounding: Round all monetary values to 2 decimal places for consistency.
-        - Date Format: Ensure dates are in the format YYYY-MM-DD. If missing or invalid, use null.
-    2. Text Processing:
-        - Special Characters: Remove special characters from text fields, such as punctuation marks (e.g., periods, slashes, etc.).
-        - Preserve Case: Preserve the original case for names and descriptions (e.g., "Acme Corp" should not be transformed into "ACME CORP").
-        - Whitespaces: Strip leading and trailing whitespaces from text fields to ensure clean data.
-3. Numerical Processing:
-        - Correct Data Types: Convert all numbers to the appropriate data types:
-        - Quantity: Must be an integer (e.g., "5" → 5).
-        - Prices and Amounts: Should be floats (e.g., "100.50" → 100.50).
-        - Thousand Separators: Remove thousand separators (e.g., "1,000" → 1000).
-4. Product Handling:
-        - Visible Product Details: Extract all visible product details, such as:
-                Name
-                Quantity
-                Unit Price
-                Description
-                Category
-        - SKU/ID: If a SKU or product ID is available, it must be included.
-        - Categories: If present, note product categories (e.g., "Stationery" or "Electronics").
-5. Validation Requirements:
-        - Serial Number Format: Ensure the invoice serial number follows the defined format (e.g., INV-2024-001). Do not allow special characters like slashes or incorrect patterns.
-        - Tax Calculation Verification: Verify that the tax value is consistent with the product's price and tax rates, if possible.
-        - Total Amount Validation: Ensure the total amount correctly reflects the sum of individual product prices, taxes, and discounts (if applicable).
-        - Date Format Compliance: Ensure all date fields are in the YYYY-MM-DD format. If the date is invalid or missing, it should be set to null.
+Invoices:
 
-EXAMPLES:
-Good output:
-{
-    "invoice": {
-        "serialNumber": "INV-2024-001",
-        "customerName": "Acme Corp",
-        "productName": "Office Supplies",
-        "quantity": 5,
-        "tax": 10.50,
-        "totalAmount": 110.50,
-        "date": "2024-03-20"
-    },
-    "product": {
-        "name": "Office Supplies",
-        "quantity": 5,
-        "unitPrice": 20.00,
-        "tax": 10.00,
-        "priceWithTax": 110.00,
-        "discount": 5.00
-    },
-    "customer": {
-        "name": "John Doe",
-        "phoneNumber": 1234567890,
-        "totalPurchaseAmount": 110.50
+Support multiple invoices in a single document
+Each invoice gets a unique entry in the "invoices" array
+Handle consolidated reports, monthly statements, and multiple transaction documents
+
+
+Products:
+
+Create a comprehensive list of all unique products
+Track products across multiple invoices
+Include optional category and SKU information
+
+
+Customers:
+
+Support multiple customers in a single document
+Add purchase history and invoice count for each customer
+Capture comprehensive customer interaction details
+
+
+
+2. Data Types and Processing
+
+Null Values:
+
+Use null for missing or unavailable fields
+Maintain data integrity across multiple entries
+
+
+Monetary Values:
+
+Convert all monetary values to numbers
+Remove currency symbols
+Round to 2 decimal places
+Handle thousand separators
+
+
+
+3. Validation and Consistency
+
+Serial Number Format:
+
+Enforce consistent invoice number patterns
+Validate unique identifiers
+Remove special characters
+
+
+Tax and Total Amount Verification:
+
+Cross-validate tax calculations
+Ensure total amounts match individual product calculations
+Check for consistency across multiple invoices
+
+
+Date Handling:
+
+Standardize to YYYY-MM-DD format
+Set to null if invalid or missing
+Support date ranges for monthly reports
+
+
+
+4. Advanced Features
+
+Summary Section:
+
+Provide an overview of the entire document
+Calculate total invoices, products, and customers
+Compute grand total and average invoice amount
+
+
+
+EXAMPLE OUTPUT
+jsonCopy{
+    "invoices": [
+        {
+            "serialNumber": "INV-2024-001",
+            "customerName": "Acme Corp",
+            "productNames": ["Office Supplies", "Computer Monitor"],
+            "totalQuantity": 10,
+            "tax": 25.50,
+            "totalAmount": 275.50,
+            "date": "2024-03-20"
+        },
+        {
+            "serialNumber": "INV-2024-002",
+            "customerName": "Tech Solutions",
+            "productNames": ["Laptop", "Software License"],
+            "totalQuantity": 3,
+            "tax": 50.00,
+            "totalAmount": 1500.00,
+            "date": "2024-03-25"
+        }
+    ],
+    "products": [
+        {
+            "name": "Office Supplies",
+            "quantity": 5,
+            "unitPrice": 20.00,
+            "tax": 10.00,
+            "priceWithTax": 110.00,
+            "discount": 5.00,
+            "category": "Stationery",
+            "sku": "OFF-SUP-001"
+        },
+        {
+            "name": "Computer Monitor",
+            "quantity": 5,
+            "unitPrice": 30.00,
+            "tax": 15.50,
+            "priceWithTax": 165.50,
+            "discount": 0,
+            "category": "Electronics",
+            "sku": "MON-LCD-002"
+        }
+    ],
+    "customers": [
+        {
+            "name": "John Doe",
+            "phoneNumber": 1234567890,
+            "totalPurchaseAmount": 275.50,
+            "invoiceCount": 1,
+            "purchaseHistory": [
+                {
+                    "invoiceNumber": "INV-2024-001",
+                    "date": "2024-03-20",
+                    "amount": 275.50
+                }
+            ]
+        },
+        {
+            "name": "Jane Smith",
+            "phoneNumber": 9876543210,
+            "totalPurchaseAmount": 1500.00,
+            "invoiceCount": 1,
+            "purchaseHistory": [
+                {
+                    "invoiceNumber": "INV-2024-002",
+                    "date": "2024-03-25",
+                    "amount": 1500.00
+                }
+            ]
+        }
+    ],
+    "summary": {
+        "totalInvoices": 2,
+        "totalProducts": 4,
+        "totalCustomers": 2,
+        "grandTotal": 1775.50,
+        "averageInvoiceAmount": 887.75
     }
 }
+PROCESSING GUIDELINES
 
-Bad output (avoid):
-{
-    "invoice": {
-        "serialNumber": "INV/2024/001",  // Contains special characters
-        "customerName": "ACME CORP.",     // Unnecessary period
-        "productName": "Office Supplies",
-        "quantity": "5",                  // Should be integer, not string
-        "tax": "$10.50",                  // Should be number without currency
-        "totalAmount": "110.50",          // Should be a float, not a string
-        "date": "20/03/2024"              // Wrong date format (Should be YYYY-MM-DD)
-    },
-    "product": {
-        "name": "Office Supplies",
-        "quantity": 5,
-        "unitPrice": "20.00",             // Should be a float, not a string
-        "tax": "$10.00",                  // Should be number without currency
-        "priceWithTax": "110.00",         // Should be a float, not a string
-        "discount": "$5.00"               // Should be number without currency
-    },
-    "customer": {
-        "name": "john doe",               // Name should be properly capitalized
-        "phoneNumber": "123-456-7890",     // Should be a number, not a string with special characters
-        "totalPurchaseAmount": "110.50"    // Should be a number, not a string
-    }
-}
+Preserve original data context
+Handle partial or incomplete information gracefully
+Prioritize data accuracy and completeness
+Support flexible document structures
+Prepare for various financial document types
 `;
 
 /**
@@ -145,79 +248,258 @@ const fileToGenerativePart = async (file) => {
 };
 
 
-function validateAndConvertData(dataString) {
+function validateAndConvertData(inputString) {
+    // Check if input is a string
+    if (typeof inputString !== 'string') {
+        console.error("Input must be a string");
+        return null;
+    }
+
     try {
-        const cleanString = dataString.trim().replace(/^```json|```$/g, '');
-        const parsedData = JSON.parse(cleanString);
+        // Trim the input and remove any JSON code block markers
+        const cleanString = inputString.trim().replace(/^```json|```$/g, '');
 
-        function validateStructure(data) {
-            const expectedStructure = {
-                invoice: {
-                    serialNumber: "string|null",
-                    customerName: "string|null",
-                    productName: "string|null", 
-                    quantity: "number|null",
-                    tax: "number|null",
-                    totalAmount: "number|null",
-                    date: "string|null", 
-                },
-                product: {
-                    name: "string|null|array",
-                    quantity: "number|null|array",
-                    unitPrice: "number|null|array",
-                    tax: "number|null|array",
-                    priceWithTax: "number|null|array",
-                    discount: "number|null|array",
-                },
-                customer: {
-                    name: "string|null",
-                    phoneNumber: "number|null",
-                    totalPurchaseAmount: "number|null",
-                },
-            };
-
-            // Helper function to check data type
-            function checkType(value, expectedType) {
-                if (expectedType.includes("|")) {
-                    // For multiple allowed types
-                    const types = expectedType.split("|");
-                    return types.some((type) => checkType(value, type));
-                }
-                if (expectedType === "null") return value === null;
-                return typeof value === expectedType;
-            }
-
-            // Recursive validation
-            function validateObject(obj, structure) {
-                for (const key in structure) {
-                    if (!obj.hasOwnProperty(key)) {
-                        throw new Error(`Missing key: ${key}`);
-                    }
-                    const expectedType = structure[key];
-                    const value = obj[key];
-                    if (typeof expectedType === "object") {
-                        // Nested object validation
-                        validateObject(value, expectedType);
-                    } else if (!checkType(value, expectedType)) {
-                        throw new Error(`Invalid type for key: ${key}`);
-                    }
-                }
-            }
-
-            // Start validation
-            validateObject(data, expectedStructure);
+        // Attempt to parse the JSON string
+        let parsedData;
+        try {
+            parsedData = JSON.parse(cleanString);
+        } catch (parseError) {
+            console.error("Invalid JSON format:", parseError.message);
+            return null;
         }
 
-        // Validate parsed data
-        validateStructure(parsedData);
+        // Validation function for the entire data structure
+        function validateDataStructure(data) {
+            // Check if all required top-level keys exist
+            const requiredKeys = ['invoices', 'products', 'customers', 'summary'];
+            requiredKeys.forEach(key => {
+                if (!data.hasOwnProperty(key)) {
+                    throw new Error(`Missing required key: ${key}`);
+                }
+            });
 
-        // If validation passes, return the JSON object
+            // Validate invoices array
+            if (!Array.isArray(data.invoices)) {
+                throw new Error("Invoices must be an array");
+            }
+            data.invoices.forEach((invoice, index) => {
+                try {
+                    validateInvoice(invoice);
+                } catch (error) {
+                    throw new Error(`Invalid invoice at index ${index}: ${error.message}`);
+                }
+            });
+
+            // Validate products array
+            if (!Array.isArray(data.products)) {
+                throw new Error("Products must be an array");
+            }
+            data.products.forEach((product, index) => {
+                try {
+                    validateProduct(product);
+                } catch (error) {
+                    throw new Error(`Invalid product at index ${index}: ${error.message}`);
+                }
+            });
+
+            // Validate customers array
+            if (!Array.isArray(data.customers)) {
+                throw new Error("Customers must be an array");
+            }
+            data.customers.forEach((customer, index) => {
+                try {
+                    validateCustomer(customer);
+                } catch (error) {
+                    throw new Error(`Invalid customer at index ${index}: ${error.message}`);
+                }
+            });
+
+            // Validate summary object
+            validateSummary(data.summary);
+        }
+
+        // Validate individual invoice
+        function validateInvoice(invoice) {
+            const requiredFields = [
+                'serialNumber', 'customerName', 'productNames', 
+                'totalQuantity', 'tax', 'totalAmount', 'date'
+            ];
+
+            // Modified to allow null for some fields
+            requiredFields.forEach(field => {
+                if (invoice[field] === undefined) {
+                    throw new Error(`Missing required invoice field: ${field}`);
+                }
+            });
+
+            // Detailed type and format checking with null allowance
+            if (invoice.serialNumber !== null && (typeof invoice.serialNumber !== 'string' || invoice.serialNumber.trim() === '')) {
+                throw new Error('Invoice serialNumber must be a non-empty string');
+            }
+            if (invoice.customerName !== null && (typeof invoice.customerName !== 'string' || invoice.customerName.trim() === '')) {
+                throw new Error('Invoice customerName must be a non-empty string');
+            }
+            if (invoice.productNames !== null) {
+                if (!Array.isArray(invoice.productNames) || invoice.productNames.length === 0) {
+                    throw new Error('Invoice productNames must be a non-empty array of strings');
+                }
+                invoice.productNames.forEach(name => {
+                    if (name !== null && (typeof name !== 'string' || name.trim() === '')) {
+                        throw new Error('Each product name must be a non-empty string');
+                    }
+                });
+            }
+            if (invoice.totalQuantity !== null && (typeof invoice.totalQuantity !== 'number' || invoice.totalQuantity < 0)) {
+                throw new Error('Invoice totalQuantity must be a non-negative number');
+            }
+            if (invoice.tax !== null && (typeof invoice.tax !== 'number' || invoice.tax < 0)) {
+                throw new Error('Invoice tax must be a non-negative number');
+            }
+            if (invoice.totalAmount !== null && (typeof invoice.totalAmount !== 'number' || invoice.totalAmount < 0)) {
+                throw new Error('Invoice totalAmount must be a non-negative number');
+            }
+            if (invoice.date !== null && !/^\d{4}-\d{2}-\d{2}$/.test(invoice.date)) {
+                throw new Error('Invoice date must be in YYYY-MM-DD format');
+            }
+        }
+
+        // Validate individual product
+        function validateProduct(product) {
+            const requiredFields = [
+                'name', 'quantity', 'unitPrice', 
+                'tax', 'priceWithTax', 'discount'
+            ];
+
+            // Modified to allow null for some fields
+            requiredFields.forEach(field => {
+                if (product[field] === undefined) {
+                    throw new Error(`Missing required product field: ${field}`);
+                }
+            });
+
+            // Detailed type checking with null allowance
+            if (product.name !== null && (typeof product.name !== 'string' || product.name.trim() === '')) {
+                throw new Error('Product name must be a non-empty string');
+            }
+            if (product.quantity !== null && (typeof product.quantity !== 'number' || product.quantity < 0)) {
+                throw new Error('Product quantity must be a non-negative number');
+            }
+            if (product.unitPrice !== null && (typeof product.unitPrice !== 'number' || product.unitPrice < 0)) {
+                throw new Error('Product unitPrice must be a non-negative number');
+            }
+            if (product.tax !== null && (typeof product.tax !== 'number' || product.tax < 0)) {
+                throw new Error('Product tax must be a non-negative number');
+            }
+            if (product.priceWithTax !== null && (typeof product.priceWithTax !== 'number' || product.priceWithTax < 0)) {
+                throw new Error('Product priceWithTax must be a non-negative number');
+            }
+            if (product.discount !== null && (typeof product.discount !== 'number' || product.discount < 0)) {
+                throw new Error('Product discount must be a non-negative number');
+            }
+
+            // Optional fields validation
+            if (product.category !== undefined && product.category !== null) {
+                if (typeof product.category !== 'string' || product.category.trim() === '') {
+                    throw new Error('Product category must be a non-empty string');
+                }
+            }
+            if (product.sku !== undefined && product.sku !== null) {
+                if (typeof product.sku !== 'string' || product.sku.trim() === '') {
+                    throw new Error('Product sku must be a non-empty string');
+                }
+            }
+        }
+
+        // Validate individual customer
+        function validateCustomer(customer) {
+            const requiredFields = [
+                'name', 'phoneNumber', 
+                'totalPurchaseAmount', 'invoiceCount'
+            ];
+
+            // Modified to allow null for some fields
+            requiredFields.forEach(field => {
+                if (customer[field] === undefined) {
+                    throw new Error(`Missing required customer field: ${field}`);
+                }
+            });
+
+            // Detailed type checking with null allowance
+            if (customer.name !== null && (typeof customer.name !== 'string' || customer.name.trim() === '')) {
+                throw new Error('Customer name must be a non-empty string');
+            }
+            if (customer.phoneNumber !== null && (typeof customer.phoneNumber !== 'number' || customer.phoneNumber <= 0)) {
+                throw new Error('Customer phoneNumber must be a positive number');
+            }
+            if (customer.totalPurchaseAmount !== null && (typeof customer.totalPurchaseAmount !== 'number' || customer.totalPurchaseAmount < 0)) {
+                throw new Error('Customer totalPurchaseAmount must be a non-negative number');
+            }
+            if (customer.invoiceCount !== null && (typeof customer.invoiceCount !== 'number' || customer.invoiceCount < 0)) {
+                throw new Error('Customer invoiceCount must be a non-negative number');
+            }
+
+            // Optional purchase history validation
+            if (customer.purchaseHistory !== undefined && customer.purchaseHistory !== null) {
+                if (!Array.isArray(customer.purchaseHistory)) {
+                    throw new Error('Customer purchaseHistory must be an array');
+                }
+                customer.purchaseHistory.forEach((purchase, index) => {
+                    if (purchase.invoiceNumber !== null && (typeof purchase.invoiceNumber !== 'string' || purchase.invoiceNumber.trim() === '')) {
+                        throw new Error(`Purchase invoiceNumber at index ${index} must be a non-empty string`);
+                    }
+                    if (purchase.date !== null && !/^\d{4}-\d{2}-\d{2}$/.test(purchase.date)) {
+                        throw new Error(`Purchase date at index ${index} must be in YYYY-MM-DD format`);
+                    }
+                    if (purchase.amount !== null && (typeof purchase.amount !== 'number' || purchase.amount < 0)) {
+                        throw new Error(`Purchase amount at index ${index} must be a non-negative number`);
+                    }
+                });
+            }
+        }
+
+        // Validate summary object
+        function validateSummary(summary) {
+            const requiredFields = [
+                'totalInvoices', 'totalProducts', 
+                'totalCustomers', 'grandTotal', 'averageInvoiceAmount'
+            ];
+
+            // Modified to allow null for some fields
+            requiredFields.forEach(field => {
+                if (summary[field] === undefined) {
+                    throw new Error(`Missing required summary field: ${field}`);
+                }
+            });
+
+            // Detailed type checking with null allowance
+            if (summary.totalInvoices !== null && (typeof summary.totalInvoices !== 'number' || summary.totalInvoices < 0)) {
+                throw new Error('Summary totalInvoices must be a non-negative number');
+            }
+            if (summary.totalProducts !== null && (typeof summary.totalProducts !== 'number' || summary.totalProducts < 0)) {
+                throw new Error('Summary totalProducts must be a non-negative number');
+            }
+            if (summary.totalCustomers !== null && (typeof summary.totalCustomers !== 'number' || summary.totalCustomers < 0)) {
+                throw new Error('Summary totalCustomers must be a non-negative number');
+            }
+            if (summary.grandTotal !== null && (typeof summary.grandTotal !== 'number' || summary.grandTotal < 0)) {
+                throw new Error('Summary grandTotal must be a non-negative number');
+            }
+            if (summary.averageInvoiceAmount !== null && (typeof summary.averageInvoiceAmount !== 'number' || summary.averageInvoiceAmount < 0)) {
+                throw new Error('Summary averageInvoiceAmount must be a non-negative number');
+            }
+        }
+
+        // Run validation
+        validateDataStructure(parsedData);
+
+        // If validation passes, return the parsed data
         return parsedData;
     } catch (error) {
         console.error("Validation failed:", error.message);
         return null; // Return null if validation fails
     }
 }
+
 
 const convertMultiPagePdfToImages = async (pdfFile) => {
     return new Promise((resolve, reject) => {
@@ -378,14 +660,27 @@ export const processFile = async (inputFile, dispatch) => {
       if (invoiceDetails.text()) {
         const data = invoiceDetails.text();
         const JSONdata = validateAndConvertData(data);
+        console.log(JSONdata);
         
         if (JSONdata) {
           processedResults.push(JSONdata);
           
           // Update Redux store for each page's data
-          if (JSONdata["invoice"]) dispatch(addInvoice(JSONdata["invoice"]));
-          if (JSONdata["product"]) dispatch(addProduct(JSONdata["product"]));
-          if (JSONdata["customer"]) dispatch(addCustomer(JSONdata["customer"]));
+          if (JSONdata["invoices"]){
+            JSONdata["invoices"].forEach(invoice => {
+              dispatch(addInvoice(invoice));
+            });
+          } 
+          if (JSONdata["products"]){
+            JSONdata["products"].forEach(product => {
+              dispatch(addProduct(product));
+            });
+          } 
+          if (JSONdata["customers"]){
+            JSONdata["customers"].forEach(customer => {
+              dispatch(addCustomer(customer));
+            });
+          }
         }
       }
     }
