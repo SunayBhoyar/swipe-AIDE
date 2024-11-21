@@ -1,10 +1,10 @@
-import * as pdfjsLib from 'pdfjs-dist';
 import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { addInvoice } from "../features/invoicesSlice";
 import { addCustomer } from "../features/customersSlice";
 import { addProduct } from "../features/productsSlice";
+
 
 const apiKey = process.env.REACT_APP_GOOGLE_GENAI_API_KEY;
 const genAI = new GoogleGenerativeAI(apiKey);
@@ -220,30 +220,62 @@ function validateAndConvertData(dataString) {
 }
 
 const convertMultiPagePdfToImages = async (pdfFile) => {
-    const pdf = await pdfjsLib.getDocument(URL.createObjectURL(pdfFile)).promise;
-    const images = [];
-  
-    for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      const page = await pdf.getPage(pageNum);
-      const viewport = page.getViewport({ scale: 1.5 });
-      
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d');
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
-      
-      await page.render({ canvasContext: context, viewport: viewport }).promise;
-      
-      const imageBlob = await new Promise((resolve) => {
-        canvas.toBlob((blob) => {
-          resolve(blob);
-        });
-      });
-  
-      images.push(new File([imageBlob], `invoice_page_${pageNum}.png`, { type: 'image/png' }));
-    }
-    return images;
-  };
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const arrayBuffer = e.target.result;
+
+            // Load pdf.js library
+            const pdfjsLib = await import('pdfjs-dist');
+            
+            // Set workerSrc for pdf.js (this should work if the worker file is accessible)
+            pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.worker.min.js";
+
+            const images = [];
+            
+            try {
+                // Load PDF document
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                
+                // Loop through all the pages
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    
+                    const viewport = page.getViewport({ scale: 2.0 }); // Adjust scale for better resolution
+                    
+                    // Create a canvas element for rendering the page
+                    const canvas = document.createElement('canvas');
+                    const context = canvas.getContext('2d');
+                    canvas.height = viewport.height;
+                    canvas.width = viewport.width;
+                    
+                    // Render the page onto the canvas
+                    await page.render({
+                        canvasContext: context,
+                        viewport: viewport,
+                    }).promise;
+
+                    // Convert canvas to Blob and then to File
+                    const imageBlob = await new Promise((resolveBlob) => {
+                        canvas.toBlob((blob) => resolveBlob(blob));
+                    });
+
+                    // Push the image into the result array
+                    images.push(new File([imageBlob], `pdf_page_${i}.png`, { type: 'image/png' }));
+                }
+                
+                // Resolve the promise with the array of images
+                resolve(images);
+            } catch (error) {
+                reject(error);
+            }
+        };
+
+        // Read the PDF file as ArrayBuffer
+        reader.readAsArrayBuffer(pdfFile);
+    });
+};
+
 
 const convertXlsxToImage = async (xlsxFile) => {
     const workbook = XLSX.read(await xlsxFile.arrayBuffer());
