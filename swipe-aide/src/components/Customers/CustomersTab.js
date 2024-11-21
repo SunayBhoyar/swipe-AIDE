@@ -25,25 +25,54 @@ const CustomersTab = () => {
     totalPurchaseAmount: ''
   });
 
+  // Utility function to safely format and handle null values
+  const safeFormat = (value, type = 'string') => {
+    // If value is null or undefined, return 'NA'
+    if (value === null || value === undefined) {
+      return 'NA';
+    }
+
+    // Handle specific types
+    switch (type) {
+      case 'number':
+        return typeof value === 'number' ? value.toFixed(2) : 'NA';
+      case 'string':
+      default:
+        return String(value);
+    }
+  };
+
   // Filtered and sorted customers
   const filteredCustomers = useMemo(() => {
-    let result = customers;
+    let result = customers.map(customer => ({
+      ...customer,
+      displayName: safeFormat(customer.name),
+      displayPhoneNumber: safeFormat(customer.phoneNumber),
+      displayTotalPurchaseAmount: safeFormat(customer.totalPurchaseAmount, 'number')
+    }));
 
     // Search filter
     if (searchTerm) {
       result = result.filter(customer => 
-        customer.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        customer.phoneNumber.includes(searchTerm)
+        customer.displayName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        customer.displayPhoneNumber.includes(searchTerm)
       );
     }
 
     // Sorting
     if (sortConfig.key) {
+      const displayKey = `display${sortConfig.key.charAt(0).toUpperCase() + sortConfig.key.slice(1)}`;
       result.sort((a, b) => {
-        if (a[sortConfig.key] < b[sortConfig.key]) {
+        // Handle 'NA' values in sorting
+        if (a[displayKey] === 'NA' && b[displayKey] === 'NA') return 0;
+        if (a[displayKey] === 'NA') return 1;
+        if (b[displayKey] === 'NA') return -1;
+
+        // Normal sorting
+        if (a[displayKey] < b[displayKey]) {
           return sortConfig.direction === 'ascending' ? -1 : 1;
         }
-        if (a[sortConfig.key] > b[sortConfig.key]) {
+        if (a[displayKey] > b[displayKey]) {
           return sortConfig.direction === 'ascending' ? 1 : -1;
         }
         return 0;
@@ -57,9 +86,9 @@ const CustomersTab = () => {
   const handleUpdateClick = (customer) => {
     setSelectedCustomer(customer);
     setUpdateForm({
-      name: customer.name,
-      phoneNumber: customer.phoneNumber,
-      totalPurchaseAmount: customer.totalPurchaseAmount
+      name: safeFormat(customer.name),
+      phoneNumber: safeFormat(customer.phoneNumber),
+      totalPurchaseAmount: safeFormat(customer.totalPurchaseAmount, 'number')
     });
     setIsUpdateModalOpen(true);
   };
@@ -78,7 +107,9 @@ const CustomersTab = () => {
     e.preventDefault();
     dispatch(updateCustomer({
       ...selectedCustomer,
-      ...updateForm
+      name: updateForm.name === 'NA' ? null : updateForm.name,
+      phoneNumber: updateForm.phoneNumber === 'NA' ? null : updateForm.phoneNumber,
+      totalPurchaseAmount: updateForm.totalPurchaseAmount === 'NA' ? null : parseFloat(updateForm.totalPurchaseAmount)
     }));
     setIsUpdateModalOpen(false);
   };
@@ -156,9 +187,9 @@ const CustomersTab = () => {
             {filteredCustomers.length > 0 ? (
               filteredCustomers.map((customer, index) => (
                 <tr key={customer.id || index}>
-                  <td>{customer.name}</td>
-                  <td>{customer.phoneNumber}</td>
-                  <td>${customer.totalPurchaseAmount.toFixed(2)}</td>
+                  <td>{customer.displayName}</td>
+                  <td>{customer.displayPhoneNumber}</td>
+                  <td>{customer.displayTotalPurchaseAmount}</td>
                   <td>
                     <div className="flex space-x-2">
                       <button 
@@ -257,7 +288,7 @@ const CustomersTab = () => {
           <div className="modal-box">
             <h3 className="font-bold text-lg">Confirm Delete</h3>
             <p className="py-4">
-              Are you sure you want to delete the customer {selectedCustomer.name}?
+              Are you sure you want to delete the customer {safeFormat(selectedCustomer.name)}?
             </p>
             <div className="modal-action">
               <button 

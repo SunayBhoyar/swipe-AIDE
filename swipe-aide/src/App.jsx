@@ -10,7 +10,7 @@ const App = () => {
   return (
     <div data-theme="cupcake" className="min-h-screen">
       <Router>
-        <div className="navbar bg-base-100 shadow-lg">
+        <div className="navbar bg-base-100 shadowxw-lg">
           <div className="navbar-start">
             <div className="dropdown">
               <div tabIndex={0} role="button" className="btn btn-ghost lg:hidden">
@@ -61,7 +61,7 @@ const App = () => {
                 </li>
               </ul>
             </div>
-            <div className="btn btn-ghost text-xl">My Business App</div>
+            <div className="btn btn-ghost text-xl">SWIPE-AIDE</div>
           </div>
           <div className="navbar-center hidden lg:flex">
             <ul className="menu menu-horizontal px-1">
