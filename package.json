@@ -1,7 +1,0 @@
-{
-  "dependencies": {
-    "html2canvas": "^1.4.1",
-    "pdfjs-dist": "^4.8.69",
-    "xlsx": "^0.18.5"
-  }
-}
