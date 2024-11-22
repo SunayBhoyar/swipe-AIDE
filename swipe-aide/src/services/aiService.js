@@ -6,6 +6,7 @@ import { addCustomer } from "../features/customersSlice";
 import { addProduct } from "../features/productsSlice";
 
 
+// Initialize Google's Generative AI with API key
 const apiKey = process.env.REACT_APP_GOOGLE_GENAI_API_KEY;
 const genAI = new GoogleGenerativeAI(apiKey);
 const model = genAI.getGenerativeModel({ model: "gemini-1.5-pro" });
@@ -137,7 +138,7 @@ Compute grand total and average invoice amount
 
 
 EXAMPLE OUTPUT
-jsonCopy{
+{
     "invoices": [
         {
             "serialNumber": "INV-2024-001",
@@ -258,8 +259,6 @@ function validateAndConvertData(inputString) {
     try {
         // Trim the input and remove any JSON code block markers
         const cleanString = inputString.trim().replace(/^```json|```$/g, '');
-
-        // Attempt to parse the JSON string
         let parsedData;
         try {
             parsedData = JSON.parse(cleanString);
@@ -270,7 +269,6 @@ function validateAndConvertData(inputString) {
 
         // Validation function for the entire data structure
         function validateDataStructure(data) {
-            // Check if all required top-level keys exist
             const requiredKeys = ['invoices', 'products', 'customers', 'summary'];
             requiredKeys.forEach(key => {
                 if (!data.hasOwnProperty(key)) {
@@ -560,42 +558,112 @@ const convertMultiPagePdfToImages = async (pdfFile) => {
 
 
 const convertXlsxToImage = async (xlsxFile) => {
-    const workbook = XLSX.read(await xlsxFile.arrayBuffer());
-    const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-    const htmlString = XLSX.utils.sheet_to_html(worksheet);
-    
-    const tempContainer = document.createElement('div');
-    tempContainer.innerHTML = htmlString;
-    document.body.appendChild(tempContainer);
-  
-    const canvas = await html2canvas(tempContainer);
-    // Convert the canvas to a Blob
-    canvas.toBlob((blob) => {
-        if (!blob) return; // Ensure the Blob exists
+    try {
+        const workbook = XLSX.read(await xlsxFile.arrayBuffer());
+        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+        const htmlString = XLSX.utils.sheet_to_html(worksheet);
+        
+        // Create an iframe to isolate styles
+        const iframe = document.createElement('iframe');
+        iframe.style.position = 'absolute';
+        iframe.style.left = '-9999px';
+        iframe.style.top = '-9999px';
+        document.body.appendChild(iframe);
 
-        // Create a URL for the Blob
-        const blobURL = URL.createObjectURL(blob);
+        // Wait for iframe to load
+        await new Promise(resolve => {
+            iframe.onload = resolve;
+            // Set content with a clean stylesheet
+            iframe.contentDocument.write(`
+                <!DOCTYPE html>
+                <html>
+                    <head>
+                        <style>
+                            body {
+                                margin: 0;
+                                padding: 20px;
+                                background: #ffffff;
+                                color: #000000;
+                                font-family: Arial, sans-serif;
+                            }
+                            table {
+                                border-collapse: collapse;
+                                width: 100%;
+                                background: #ffffff;
+                            }
+                            td, th {
+                                border: 1px solid #cccccc;
+                                padding: 8px;
+                                text-align: left;
+                                background: #ffffff;
+                                color: #000000;
+                            }
+                            th {
+                                background: #f3f3f3;
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        ${htmlString}
+                    </body>
+                </html>
+            `);
+            iframe.contentDocument.close();
+        });
 
-        // Programmatically download the file
-        const downloadLink = document.createElement("a");
-        downloadLink.href = blobURL;
-        downloadLink.download = "snapshot.png"; // Set the file name
-        document.body.appendChild(downloadLink); // Append to the document
-        downloadLink.click(); // Trigger the download
-        document.body.removeChild(downloadLink); // Clean up the DOM
+        // Configure html2canvas options
+        const options = {
+            backgroundColor: '#ffffff',
+            scale: 2,
+            useCORS: true,
+            logging: false,
+            windowWidth: iframe.contentDocument.documentElement.scrollWidth,
+            windowHeight: iframe.contentDocument.documentElement.scrollHeight,
+        };
 
-        // Revoke the object URL after use
-        URL.revokeObjectURL(blobURL);
-    }, "image/png"); // Specify image type
-    
-    document.body.removeChild(tempContainer);
-  
-    return await new Promise((resolve) => {
-      canvas.toBlob((blob) => {
-        resolve(new File([blob], 'invoice.png', { type: 'image/png' }));
-      });
-    });
-  };
+        try {
+            // Capture the iframe's content
+            const canvas = await html2canvas(iframe.contentDocument.body, options);
+            
+            // Clean up
+            document.body.removeChild(iframe);
+            
+            // Create File object from canvas
+            return await new Promise((resolve) => {
+                canvas.toBlob((blob) => {
+                    if (!blob) {
+                        throw new Error('Failed to create blob from canvas');
+                    }
+                    
+                    // Create the download
+                    const blobURL = URL.createObjectURL(blob);
+                    const downloadLink = document.createElement("a");
+                    downloadLink.href = blobURL;
+                    downloadLink.download = xlsxFile.name.replace(/\.xlsx?$/, '.png');
+                    document.body.appendChild(downloadLink);
+                    // downloadLink.click();
+                    document.body.removeChild(downloadLink);
+                    URL.revokeObjectURL(blobURL);
+                    
+                    // Resolve with the File object
+                    resolve(new File(
+                        [blob], 
+                        xlsxFile.name.replace(/\.xlsx?$/, '.png'), 
+                        { type: 'image/png' }
+                    ));
+                }, 'image/png', 1.0);
+            });
+        } catch (error) {
+            document.body.removeChild(iframe);
+            console.error('html2canvas error:', error);
+            throw new Error(`Failed to convert spreadsheet to image: ${error.message}`);
+        }
+    } catch (error) {
+        console.error('Conversion error:', error);
+        throw new Error(`Failed to process spreadsheet: ${error.message}`);
+    }
+};
+
 
 /**
  * Gets Invoice data of an image using Gemini Vision API
