@@ -1,4 +1,4 @@
-![Demo Screenshot](./readmeImg1.png)
+![Demo Screenshot](./readmeImg2.png)
 # SWIPE AIDE
 ## Invoice Management Application
 
